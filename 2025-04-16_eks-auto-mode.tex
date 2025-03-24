@@ -1,0 +1,292 @@
+\documentclass[english]{beamer}
+%% \usetheme{Boadilla}
+\usetheme{Madrid}
+\usecolortheme{seahorse}
+\setbeamerfont{footnote}{size=\tiny}
+\setbeameroption{show notes on second screen=right}
+
+\usepackage{dirtytalk}
+\usepackage{emoji}
+%% \usepackage{epstopdf}
+\newcommand{\yep}{\emoji{check-mark-button}}
+\newcommand{\kinda}{\emoji{warning}}
+\newcommand{\nope}{\emoji{cross-mark}}
+\usepackage{hyperref}
+\newcommand{\hrefootnote}[2]{\href{#1}{#2}\footnote{\url{#1}}}
+\usepackage{minted}
+\usemintedstyle{friendly}
+\usepackage{qrcode}
+\newcommand{\supasterisk}{\textsuperscript{*}}
+%% \newcommand{\supdagger}{\textsuperscript{\textdagger}}
+%% \newcommand{\supddagger}{\textsuperscript{\textddagger}}
+
+\title{EKS Auto Mode: Behind the Curtain}
+\author[Eric Bailey]{Eric Bailey}
+\date[Kubernetes Slovenia 16.04.2025]{Kubernetes Slovenia \\ 16th April 2025}
+
+\begin{document}
+
+\begin{frame}
+  \titlepage
+  \note{
+    Briefly mention how it's presented as a turnkey or magic solution to the
+    problem of managing Kubernetes, and that we're going to ``look behind the
+    curtain.''
+  }
+\end{frame}
+
+\begin{frame}
+  \frametitle{Table of Contents}
+  \tableofcontents
+\end{frame}
+
+\section{Introduction}
+\begin{frame}
+  \frametitle{Introduction}
+  \begin{itemize}
+    \item What is EKS Auto Mode?
+          \note[item]<1->{
+            It's basically vanilla EKS with some common add-ons, including
+            highly opinionated or restrictive installations of the AWS VPC CNI
+            and Karpenter.
+          }
+          \pause \\
+          \say{%
+            Amazon EKS Auto Mode fully automates Kubernetes cluster management for
+            compute, storage, and networking on AWS with a single click.%
+          }%% --- \href{https://aws.amazon.com/eks/auto-mode/}{Amazon EKS Auto Mode}%
+          \footnote<2->{\url{https://aws.amazon.com/eks/auto-mode/}}
+          \pause
+    \item What is EKS?
+          \note[item]<3->{
+            I'll refer to this as ``vanilla EKS'' to differentiate from EKS
+            Auto Mode.
+          }
+          \note[item]<3->{
+            It's ``Kubernetes as a Service'', i.e., AWS-managed control plane
+            and a small collection of official add-ons, as well as a broader
+            add-on marketplace.
+          }
+          \note[item]<3->{
+            What's covered by AWS Support is sensibly minimal, and it's slightly
+            prescriptive, e.g., feature flags, blessed CNIs, etc.
+          }
+          \pause \\
+          \say{%
+            Amazon Elastic Kubernetes Service (Amazon EKS) is the premiere platform
+            for running Kubernetes clusters, both in the Amazon Web Services (AWS)
+            cloud and in your own data centers (EKS Anywhere and Amazon EKS Hybrid
+            Nodes).%
+          }%% --- \href{https://docs.aws.amazon.com/eks/latest/userguide/what-is-eks.html}{What is Amazon EKS?}%
+          \footnote<4->{\url{https://docs.aws.amazon.com/eks/latest/userguide/what-is-eks.html}}
+          \pause
+    \item What is kOps? \pause \\
+          \say{%
+            The easiest way to get a production grade Kubernetes cluster up and
+            running.%
+          }%% --- \href{https://kops.sigs.k8s.io/}{kOps - Kubernetes Operations}%
+          \footnote<6->{\url{https://kops.sigs.k8s.io/}}
+  \end{itemize}
+\end{frame}
+
+\section{kOps - Kubernetes Operations}
+\begin{frame}[fragile]
+  \frametitle{kOps - Kubernetes Operations}
+
+  kOps provides several managed add-ons, configurable through the cluster spec,
+  as well as the means to specify custom static add-ons.%
+  \footnote{\url{https://kops.sigs.k8s.io/addons/}}
+  \vskip 1em
+
+  \pause
+  For example, \href{https://github.com/kubernetes/autoscaler/tree/master/cluster-autoscaler}{Cluster Autoscaler}%
+  \footnote<2->{\url{https://github.com/kubernetes/autoscaler/tree/master/cluster-autoscaler}}%
+  can be configured as follows.
+  \begin{minted}[fontsize=\scriptsize,frame=lines]{yaml}
+    spec:
+      clusterAutoscaler:
+        enabled: true
+        # ...
+  \end{minted}
+  \vskip 1em
+
+  \pause
+  Managed add-ons will be upgraded following the kOps and Kubernetes lifecycle,
+  and are configured based on the \href{https://kops.sigs.k8s.io/cluster_spec/}{cluster spec}%
+  \footnote<3->{\url{https://kops.sigs.k8s.io/cluster_spec/}}.
+\end{frame}
+
+\begin{frame}
+  \frametitle{kOps ``Auto Mode''}
+
+  Using kOps built-in features and managed add-ons, it's easy to achieve a robust
+  Kubernetes cluster, with minimal TCO. \pause
+
+  \begin{itemize}
+    \item CNI\footnote{\url{https://kops.sigs.k8s.io/networking/\#cni}}
+          \note[item]<2->{kOps supports several CNIs, such as the AWS VPC CNI and Cilium.}
+    \item CoreDNS
+    \item kube-proxy \pause
+    \item Node-local DNS cache \pause
+    \item Cluster Autoscaler (and NTH) \pause or Karpenter \pause
+    \item AWS EBS CSI driver \pause (and snapshot controller) \pause
+    \item Metrics Server \pause
+    \item Pod Identity Webhook \pause
+    \item AWS Load Balancer Controller \pause
+    \item cert-manager
+          \note[item]<11->{Mention hen and egg for some kOps components such as Metrics Server.}
+  \end{itemize}
+\end{frame}
+
+\section{EKS}
+
+\begin{frame}
+  \frametitle{EKS ``Manual Mode''}
+
+  For EKS there exist several ``managed''\footnote{Sane defaults, optionally
+    managed lifecycle, backed by E2E testing by Amazon.} add-ons, tens of
+  community\supasterisk and marketplace add-ons\note[item]{You can also write
+    your own add-ons.}, and
+  \hrefootnote{https://aws-ia.github.io/terraform-aws-eks-blueprints/}{Amazon
+    EKS Blueprints for Terraform} can help fill the remaining gaps.
+  \note[item]{There be dragons. Managing Helm charts via Terraform
+    is\ldots\ interesting.} \pause
+
+  \begin{itemize}
+    \item AWS VPC CNI
+    \item CoreDNS
+          \note[item]<2->{Mention how node-local DNS cache is just a special case.}
+          \note[item]<2->{Not possible to configure two instances of CoreDNS add-on.}
+    \item kube-proxy \pause
+    \item No autoscaler add-on\ldots\pause\ but MNGs play nice with CAS \emoji{slightly-frowning-face} \pause
+    \item EBS CSI driver \pause (and snapshot controller) \pause
+    \item Metrics Server\supasterisk
+          \note[item]<7->{Metrics Server and cert-manager are community add-ons.}
+          \pause
+    \item Pod Identity Webhook \pause \emoji{magic-wand} \pause
+          \note[item]<8->{Pod identity webhook ``for free''.}
+    \item AWS Load Balancer Controller \pause \emoji{confounded-face}
+          \note[item]<10->{Need to DIY LBC.}
+          \pause
+    \item cert-manager\supasterisk
+  \end{itemize}
+\end{frame}
+
+\section{EKS Auto Mode}
+\begin{frame}
+  \frametitle{EKS Auto Mode}
+
+  Out of the box\footnote{\ldots assuming the right options are specified.}, EKS Auto Mode
+  supports the following
+  \hrefootnote{https://docs.aws.amazon.com/eks/latest/userguide/automode.html\#_automated_components}{automated
+    components}.
+  \pause
+
+  \begin{itemize}
+    \item AWS VPC CNI \pause (with caveats)
+      \note[item]<3->{EKS Auto Mode does not support warm IP, warm prefix, or warm ENI configurations.}
+      \note[item]<3->{Instead of ds/aws-node it's implemented as a systemd unit that can't be reconfigured.}
+      \note[item]<3->{tl;dr custom networking is not supported.}
+          \pause
+    \item Karpenter \pause (with default and custom NodePools and NodeClasses)
+      \note[item]<4->{Auto Mode comes with NodePools general-purpose and platform (tainted \texttt{CriticalAddonsOnly:NoSchedule}).}
+      \note[item]<4->{Default NodePools dont' support SSH and such.}
+      \note[item]<4->{You can add your own NodePools, but probably don't wanna have different CNI configs.}
+          \pause
+    \item CoreDNS \pause
+          \note[item]<5->{You can configure this, e.g., to use a node-local DNS cache, but you'll probably have to install it off the shelf first, and then reconfigure, then install node-local DNS, then reconfigure\ldots}
+    \item Security patches, OS and component upgrades
+          \note[item]<7->{\say{EKS Auto Mode enforces a 21-day maximum node
+              lifetime to ensure up-to-date software and APIs.}} \pause
+    \item Pod Identity Webhook \pause
+    \item AWS Load Balancer controller%
+          \footnote<9->{There is no migration path for existing load balancers.}
+  \end{itemize}
+\end{frame}
+
+\section{So, which approach is best?}
+\begin{frame}
+  \frametitle{So, which approach is best?}
+
+  \pause
+  \begin{center}
+    It depends.\textsuperscript{\texttrademark}
+  \end{center}
+\end{frame}
+
+\begin{frame}[plain]
+  \begin{center}
+    \Huge Thank you! \emoji{person-bowing} \\
+  \end{center}
+\end{frame}
+
+\begin{frame}
+  \frametitle{But actually\ldots}
+
+  Here are some criteria to rule out EKS Auto Mode as a viable option.
+
+  \begin{itemize}
+    \item Need custom networking?
+          \begin{itemize}
+            \pause
+            \item \emoji{face-with-head-bandage}
+                  \say{%
+                    The IP Addresses of Pods and Nodes must be from the same
+                    CIDR Block.%
+                  }\footnote<2->{The documentation is misleading and
+                    contradictory, YMMV.}
+                  \pause
+            \item \emoji{money-with-wings} EKS Auto Mode does not support
+                  warm IP, warm prefix, or warm ENI configurations.
+                  \note[item]<3->{Mention our IPAM cost drivers deep dive.}
+                  \pause
+            \item \emoji{grimacing} Want to use a node-local DNS cache?
+                  \note[item]<4->{Custom configuration is supported, but likely
+                    would need to be added after initial cluster provisioning.}
+          \end{itemize}
+          \pause
+    \item Have an existing EKS cluster?
+          \begin{itemize}
+            \pause
+            \item \emoji{chart-decreasing} Can't tolerate downtime for
+                  existing load balancers?
+          \end{itemize}
+  \end{itemize}
+\end{frame}
+
+\begin{frame}
+  \frametitle{Feature Comparsion}
+
+  Comparing the high-level
+  \hrefootnote{https://docs.aws.amazon.com/eks/latest/userguide/automode.html\#_features}{features}
+
+  \begin{tabular}{ r|c c c }
+                   & EKS Auto Mode & EKS    & kOps   \\
+    \hline
+    Nodes          & \kinda        & \yep   & \yep   \\
+    Autoscaling    & \yep          & \kinda & \yep   \\
+    Upgrades       & \yep          & \kinda & \kinda \\
+    Load balancing & \kinda        & \yep   & \yep   \\
+    Storage        & \yep          & \yep   & \yep   \\
+    Networking     & \nope         & \kinda & \yep   \\
+    IAM            & \yep          & \yep   & \yep   \\
+    AMI/OS         & \nope         & \yep   & \yep
+  \end{tabular}
+  \note[item]{EKS Auto Mode uses their custom Bottlerocket AMI.}
+  \note[item]{I haven't tested GPU workloads. They're supposed to work, but NVIDIA is gonna NVIDIA\ldots}
+  \note[item]{%
+    On EKS and kOps you can use pretty much anything, so long as you have a
+    compatible kubelet, but Karpenter is getting increasingly prescriptive,
+    which is not inherently bad.%
+  }
+\end{frame}
+
+\begin{frame}[plain]
+  \begin{center}
+    Slides available on GitHub: \\
+    \vskip 2em
+    \qrcode{https://github.com/yurrriq/presentations}
+  \end{center}
+\end{frame}
+
+\end{document}

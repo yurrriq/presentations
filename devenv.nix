@@ -3,6 +3,7 @@
 {
   # https://devenv.sh/packages/
   packages = with pkgs; [
+    pympress
     python3Packages.pywatchman
     watchman
   ];
@@ -11,7 +12,6 @@
   languages.texlive.enable = true;
   languages.texlive.packages = [
     "beamer"
-    "datetime"
     "dirtytalk"
     "emoji"
     "fmtcount"
@@ -28,6 +28,8 @@
 
   # https://devenv.sh/scripts/
   scripts.build.exec = ''
+    export FORCE_SOURCE_DATE=1
+    export SOURCE_DATE_EPOCH="$(date +%s)"
     latexmk -pdflatex='lualatex %O %S' -pdf "$@"
   '';
 
