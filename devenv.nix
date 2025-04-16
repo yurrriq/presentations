@@ -5,6 +5,7 @@
   packages = with pkgs; [
     pympress
     python3Packages.pywatchman
+    remote-touchpad
     watchman
   ];
 
